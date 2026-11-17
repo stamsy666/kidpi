@@ -1,0 +1,73 @@
+# Выпуск новой версии kidpi: push тега вида v0.3.1.
+# Собирает установщик на Windows, подписывает его ключом обновлений
+# и публикует GitHub Release вместе с latest.json, по которому
+# установленные kidpi находят и ставят обновление.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify release version and signing key
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $cargoVersion = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version = "([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          if ($version -ne $packageVersion -or $version -ne $tauriVersion -or $version -ne $cargoVersion) {
+            throw "Tag, package.json, tauri.conf.json and Cargo.toml must have the same version"
+          }
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            throw "TAURI_SIGNING_PRIVATE_KEY repository secret is missing"
+          }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Python и библиотеки для tg-ws-proxy (в репозиторий не кладутся: ~35 МБ)
+      - name: Prepare tg-ws-proxy runtime
+        shell: pwsh
+        run: |
+          $rt = "src-tauri/resources/tgws/runtime"
+          New-Item -ItemType Directory -Force -Path $rt | Out-Null
+          Invoke-WebRequest https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip -OutFile py.zip
+          Expand-Archive py.zip -DestinationPath $rt -Force
+          Set-Content -Path "$rt/python312._pth" -Value "python312.zip`r`n.`r`nLib\site-packages`r`n" -NoNewline
+          Set-Content -Path "$rt/runtime-version.txt" -Value "3.12.10+cryptography46.0.5+httpx0.28.1" -NoNewline
+          python -m pip download --dest wheels --platform win_amd64 --python-version 3.12 --implementation cp --only-binary=:all: "cryptography==46.0.5" certifi "httpx[http2]==0.28.1"
+          New-Item -ItemType Directory -Force -Path "$rt/Lib/site-packages" | Out-Null
+          Get-ChildItem wheels/*.whl | ForEach-Object { python -m zipfile -e $_.FullName "$rt/Lib/site-packages" }
+          Remove-Item "$rt/_msi.pyd", "$rt/_sqlite3.pyd", "$rt/sqlite3.dll" -ErrorAction SilentlyContinue
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: kidpi ${{ github.ref_name }}
+          releaseBody: "Установщик для Windows x64: kidpi_*_x64-setup.exe"
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
