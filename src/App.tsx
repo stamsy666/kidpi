@@ -19,6 +19,8 @@ export default function App({ intro = false }: { intro?: boolean }) {
   const [introStage, setIntroStage] = useState<"play" | "fly" | "done">(
     intro ? "play" : "done",
   );
+  // once an intro has played, the title bar logo leaves its entrance to the intro
+  const [introEver, setIntroEver] = useState(intro);
   const shown = introStage !== "play";
   const [settings, setSettings] = useState<"closed" | "open" | "closing">(
     "closed",
@@ -50,6 +52,14 @@ export default function App({ intro = false }: { intro?: boolean }) {
 
   const restore = () => {
     if (winRef.current !== "hidden" && winRef.current !== "collapsing") return;
+    // the intro plays every time the window comes back, not only at launch
+    if (stRef.current?.intro) {
+      setSettings("closed");
+      setIntroEver(true);
+      setIntroStage("play");
+      setWin("normal");
+      return;
+    }
     sounds.play("up");
     setWin("restoring");
     window.setTimeout(
@@ -188,7 +198,7 @@ export default function App({ intro = false }: { intro?: boolean }) {
           <>
             <header className="titlebar" data-tauri-drag-region>
               <img
-                className={`logo ${introStage === "fly" ? "landing" : ""} ${intro ? "no-enter" : ""}`}
+                className={`logo ${introStage === "fly" ? "landing" : ""} ${introEver ? "no-enter" : ""}`}
                 src={logo}
                 alt="kidpi"
                 data-tauri-drag-region

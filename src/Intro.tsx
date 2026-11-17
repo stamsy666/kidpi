@@ -3,7 +3,7 @@ import logo from "./assets/logo.png";
 import { sounds } from "./sounds";
 
 /**
- * Launch intro (~3 s): a point of lavender light wakes in the dark, petals drift
+ * Intro (~3 s), played every time the main window opens: a point of lavender light wakes in the dark, petals drift
  * in toward it, the light blooms and throws them outward, the kidpi logo comes
  * out of the glow and flies into its place in the title bar while the app
  * appears underneath. A click or any key skips to the end.

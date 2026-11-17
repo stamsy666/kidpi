@@ -35,7 +35,7 @@ pub struct Settings {
     pub update_repo: String,
     /// Interface scale, 1.0 = 100 % (see scale.rs).
     pub scale: f64,
-    /// The launch intro plays when the window opens at start.
+    /// The intro plays whenever the main window opens (at launch, from the tray or taskbar).
     pub intro: bool,
 }
 
