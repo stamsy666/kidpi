@@ -1,0 +1,100 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "kidpi",
+  "version": "0.3.2",
+  "identifier": "app.kidpi.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "kidpi",
+        "width": 980,
+        "height": 660,
+        "minWidth": 760,
+        "minHeight": 560,
+        "center": true,
+        "decorations": false,
+        "resizable": true,
+        "visible": false,
+        "shadow": true,
+        "backgroundColor": "#000000",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
+      },
+      {
+        "label": "traymenu",
+        "title": "kidpi",
+        "url": "index.html#tray",
+        "width": 296,
+        "height": 336,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "visible": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": true,
+        "focus": true,
+        "windowEffects": {
+          "effects": [
+            "acrylic"
+          ]
+        },
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "publisher": "kidpi",
+    "shortDescription": "kidpi",
+    "longDescription": "Обход ограничений для Discord и YouTube на основе zapret от Flowseal",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "resources/zapret": "zapret",
+      "resources/tgws": "tgws"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "perMachine",
+        "installerHooks": "./windows/hooks.nsh",
+        "languages": [
+          "Russian",
+          "English"
+        ],
+        "displayLanguageSelector": false
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM4MDg1NTA3NDIyQkY3NEIKUldSTDl5dENCMVVJeUpWSFhONkc0UFRzTnBnRHJQSk5lZ0ttY2ovazA3MkQ1MmJnVWs4K0NWZ2oK",
+      "endpoints": [
+        "https://github.com/stamsy666/kidpi/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}
