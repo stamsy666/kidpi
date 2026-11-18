@@ -9,6 +9,12 @@
 ## Telegram
 «Ускорение Telegram» — прокси из https://github.com/Flowseal/tg-ws-proxy (MIT). kidpi запускает
 его `proxy/tg_ws_proxy.py` на встроенном Python и обновляет код из релизов на GitHub.
+
+Перед прокси kidpi загружает свой `src-tauri/resources/tgws/kidpi/kidpi_tweaks.py`. Он лежит отдельно
+от кода прокси, поэтому не пропадает при обновлении tg-ws-proxy. Модуль перебирает CF-домены
+параллельно, а не по одному с таймаутом 10 с, и ставит недавно упавшие домены в конец очереди.
+Каждая правка сначала проверяет, что код прокси выглядит как ожидалось, иначе она пропускается.
+Что применилось, видно в `tgws.log` в строке `kidpi tweaks: ...`.
 Python и библиотеки в архив исходников не входят, их собирает команда ниже (в `src-tauri/resources/tgws/runtime`):
 ```
 curl -o py.zip https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip

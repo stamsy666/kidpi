@@ -28,6 +28,9 @@ pub struct Install {
     pub runtime: PathBuf,
     pub app: PathBuf,
     pub version: String,
+    /// kidpi's own additions to the proxy (`kidpi_tweaks.py`), kept apart from the
+    /// proxy code so updates of tg-ws-proxy do not remove them.
+    pub tweaks: PathBuf,
 }
 
 fn root() -> PathBuf {
@@ -42,6 +45,7 @@ fn app_valid(dir: &Path) -> bool {
 /// code that came with a later update lives in `%ProgramData%\kidpi\tgws\app\<version>`.
 pub fn ensure_installed(bundled: &Path, preferred: Option<&str>) -> Result<Install, String> {
     let runtime = bundled.join("runtime");
+    let tweaks = bundled.join("kidpi");
     if !runtime.join("python.exe").is_file() {
         return Err("в папке kidpi нет Python для tg-ws-proxy — переустановите kidpi или проверьте антивирус".into());
     }
@@ -52,9 +56,9 @@ pub fn ensure_installed(bundled: &Path, preferred: Option<&str>) -> Result<Insta
         .filter(|d| app_valid(d))
         .map(|d| (zapret::read_version(&d).unwrap_or_default(), d));
     match (updated, bundled_ver) {
-        (Some((v, d)), Some(b)) if zapret::newer(&v, &b) => Ok(Install { runtime, app: d, version: v }),
-        (Some((v, d)), None) => Ok(Install { runtime, app: d, version: v }),
-        (_, Some(b)) => Ok(Install { runtime, app: bundled_app, version: b }),
+        (Some((v, d)), Some(b)) if zapret::newer(&v, &b) => Ok(Install { runtime, app: d, version: v, tweaks }),
+        (Some((v, d)), None) => Ok(Install { runtime, app: d, version: v, tweaks }),
+        (_, Some(b)) => Ok(Install { runtime, app: bundled_app, version: b, tweaks }),
         _ => Err("tg-ws-proxy не найден в папке kidpi — переустановите kidpi".into()),
     }
 }
@@ -143,9 +147,13 @@ impl Runner {
             .map(Stdio::from)
             .unwrap_or_else(|_| Stdio::null());
 
+        // kidpi_tweaks is optional: without the file the proxy runs as upstream wrote it
         let boot = format!(
-            "import sys,runpy;sys.path.insert(0,r'{}');runpy.run_module('proxy.tg_ws_proxy',run_name='__main__',alter_sys=True)",
-            inst.app.display()
+            "import sys,runpy,importlib.util as u;sys.path.insert(0,r'{}');sys.path.append(r'{}');\
+             u.find_spec('kidpi_tweaks') and __import__('kidpi_tweaks');\
+             runpy.run_module('proxy.tg_ws_proxy',run_name='__main__',alter_sys=True)",
+            inst.app.display(),
+            inst.tweaks.display()
         );
         let mut cmd = Command::new(&python);
         cmd.current_dir(&inst.app)

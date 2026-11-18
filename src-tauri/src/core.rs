@@ -344,7 +344,7 @@ impl Core {
         }
         self.log(format!("Вышла новая версия tg-ws-proxy {ver}"));
         let dir = tgws::install_tag(&tag).await?;
-        let new_inst = tgws::Install { runtime: inst.runtime.clone(), app: dir, version: ver.clone() };
+        let new_inst = tgws::Install { runtime: inst.runtime.clone(), app: dir, version: ver.clone(), tweaks: inst.tweaks.clone() };
         let (was_on, port) = {
             let mut g = self.lock();
             g.tg = Some(new_inst.clone());
@@ -376,10 +376,19 @@ impl Core {
         Ok(UpdateOutcome::Updated(ver))
     }
 
+    /// What zapret's .bat files do before winws.exe starts: other winws.exe go,
+    /// TCP timestamps go on. Blocking (taskkill, netsh).
+    pub fn prepare_winws(&self) {
+        zapret::kill_stray();
+        if let Some(msg) = zapret::enable_tcp_timestamps() {
+            self.log(msg);
+        }
+    }
+
     /// Turns the bypass on or off from the big button or the tray menu.
     pub fn set_enabled(&self, on: bool) -> StateDto {
         if on {
-            zapret::kill_stray();
+            self.prepare_winws();
             let ok = self.start_current();
             self.update_settings(|s| s.enabled = true);
             if ok {
@@ -454,7 +463,10 @@ impl Core {
         };
 
         self.log(format!("Подбор стратегии: проверяю {} вариантов", strategies.len()));
-        let _ = tokio::task::spawn_blocking(zapret::kill_stray).await;
+        {
+            let me = self.clone();
+            let _ = tokio::task::spawn_blocking(move || me.prepare_winws()).await;
+        }
 
         let total = strategies.len();
         let mut best: Option<(usize, Score)> = None;
@@ -572,6 +584,42 @@ impl Core {
         Ok(UpdateOutcome::Updated(latest))
     }
 
+    /// After sleep or hibernation: tg-ws-proxy keeps pooled WebSocket and H2
+    /// connections that died while the PC slept, and its retry back-off has grown
+    /// on the failures, so Telegram stays slow or offline until they time out.
+    /// A fresh start costs a second. winws.exe is restarted too, so WinDivert
+    /// starts clean on the network that came back.
+    async fn after_sleep(&self, gap: Duration) {
+        // network adapters need a moment after waking up
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        let (tg, bypass) = {
+            let g = self.lock();
+            (
+                g.settings.telegram && g.tg.is_some(),
+                g.settings.enabled && g.settings.strategy.is_some() && g.progress.is_none(),
+            )
+        };
+        if !tg && !bypass {
+            return;
+        }
+        let what = match (tg, bypass) {
+            (true, true) => "обход и ускорение Telegram",
+            (true, false) => "ускорение Telegram",
+            _ => "обход",
+        };
+        self.log(format!("Компьютер вышел из сна (пауза {} мин) — перезапускаю {what}", gap.as_secs() / 60));
+        if tg {
+            self.tg_start();
+        }
+        if bypass {
+            // a pick or an update in progress restarts winws.exe by itself
+            if let Ok(_op) = self.op.try_lock() {
+                self.start_current();
+            }
+        }
+        self.emit_state();
+    }
+
     /// Every 15 s: restarts winws.exe if it died. Every 10 min: if Discord and
     /// YouTube stopped answering while the internet works, picks again.
     pub async fn watchdog(self: Arc<Self>) {
@@ -580,9 +628,23 @@ impl Core {
         // restarts in a row that did not keep winws.exe alive (antivirus, broken driver…)
         let mut revives = 0;
         let mut tg_revives = 0;
+        let mut last_tick = std::time::SystemTime::now();
         loop {
             tokio::time::sleep(Duration::from_secs(15)).await;
             tick += 1;
+
+            // the wall clock jumped far past the 15 s: the PC was asleep
+            let now = std::time::SystemTime::now();
+            let gap = now.duration_since(last_tick).unwrap_or_default();
+            last_tick = now;
+            if gap > Duration::from_secs(60) {
+                strikes = 0;
+                revives = 0;
+                tg_revives = 0;
+                self.after_sleep(gap).await;
+                last_tick = std::time::SystemTime::now();
+                continue;
+            }
 
             // tg-ws-proxy: bring it back if it died, three tries at most
             let (tg_want, tg_alive) = {

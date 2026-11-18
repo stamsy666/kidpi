@@ -426,7 +426,8 @@ fn main() {
                 // other people's winws.exe only goes when kidpi's bypass is about to start
                 let bypass = s.enabled && s.strategy.is_some();
                 if bypass {
-                    let _ = tokio::task::spawn_blocking(zapret::kill_stray).await;
+                    let prep = c.clone();
+                    let _ = tokio::task::spawn_blocking(move || prep.prepare_winws()).await;
                     if c.start_current() {
                         c.log(format!("Обход включён: {}", s.strategy.unwrap_or_default()));
                     }

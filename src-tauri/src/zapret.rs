@@ -432,6 +432,64 @@ pub fn kill_stray() {
     }
 }
 
+/// Turns on TCP timestamps (RFC 1323) in Windows, as zapret's own strategy files do:
+/// each `general*.bat` calls `service.bat status_zapret`, which runs
+/// `netsh interface tcp set global timestamps=enabled`. Most strategies use
+/// `--dpi-desync-fooling=ts`: the fake packets carry an outdated timestamp, so the
+/// server drops them and only the DPI sees them. Windows keeps timestamps off by
+/// default; then the fakes reach the server and break the connection, so sites open
+/// one time and not the next. kidpi starts winws.exe itself, without the .bat,
+/// so it has to do this on its own. Runs once per kidpi start.
+/// Returns a line for the journal when something changed or went wrong.
+pub fn enable_tcp_timestamps() -> Option<String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static DONE: AtomicBool = AtomicBool::new(false);
+        if DONE.swap(true, Ordering::SeqCst) {
+            return None;
+        }
+        let netsh = |args: &[&str]| {
+            Command::new("netsh")
+                .args(args)
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdin(Stdio::null())
+                .stderr(Stdio::null())
+                .output()
+        };
+        // "RFC 1323 Timestamps : disabled"; the words around the value may be translated
+        let state = netsh(&["interface", "tcp", "show", "global"]).ok().and_then(|o| {
+            let text = String::from_utf8_lossy(&o.stdout).to_lowercase();
+            let line = text.lines().find(|l| l.contains("1323"))?.to_string();
+            if line.contains("disabled") {
+                Some(false)
+            } else if line.contains("enabled") {
+                Some(true)
+            } else {
+                None
+            }
+        });
+        if state == Some(true) {
+            return None;
+        }
+        match netsh(&["interface", "tcp", "set", "global", "timestamps=enabled"]) {
+            Ok(o) if o.status.success() => {
+                (state == Some(false)).then(|| "Включил TCP timestamps в Windows: без них большинство стратегий zapret работают с перебоями. Если обход работал плохо, подберите стратегию заново".to_string())
+            }
+            Ok(o) => Some(format!(
+                "Не удалось включить TCP timestamps (netsh: {}) — стратегии с fooling=ts могут работать с перебоями",
+                String::from_utf8_lossy(&o.stdout).trim()
+            )),
+            Err(e) => Some(format!("Не удалось включить TCP timestamps: {e}")),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
 /// Ends every process whose program lies inside `dir`.
 pub fn kill_under(dir: &Path) -> usize {
     let prefix = format!("{}\\", dir.to_string_lossy().trim_end_matches('\\').to_lowercase());
